@@ -19,6 +19,8 @@ int main(int argc, char const *argv[])
     int addrlen = sizeof(address);
     char buffer[BUFSIZE] = {0};
     std::unordered_map<std::string,std::string> cache;
+    unsigned long cachehit = 0;
+    unsigned long cachemiss = 0;
 
     // Creating socket file descriptor
     if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0)
@@ -71,10 +73,11 @@ int main(int argc, char const *argv[])
 				break;
 			}
 			buffer[valread] = NULL;
-			printf("MSG Received: %s\n",buffer);
+			//printf("MSG Received: %s\n",buffer);
 			std::string msg(buffer);
 			if(msg == "CLOSE"){
 				printf("Good talking to you, closing socket now\n");
+				printf("Cache Hit Until Now: %lu\nCache Miss Until Now: %lu\n",cachehit,cachemiss);
 				close(new_socket);
 				break;
 			}
@@ -87,13 +90,15 @@ int main(int argc, char const *argv[])
 			std::string header = msg.substr(0,header_pos);
 			std::string body = msg.substr(header_pos+1);
 			if(header == "check"){
-				printf("Check if cache hit\n");
+				//printf("Check if cache hit\n");
 				std::unordered_map<std::string, std::string>::iterator get = cache.find(body);
 				if(get != cache.end()){
 					//Cache Hit!
+					cachehit++;
 					std::string reply = "G " + get->second;
 				    send(new_socket , reply.c_str() , reply.size() , 0 );
 				}else{
+					cachemiss++;
 					send(new_socket, "N ", 2, 0);
 				}
 				continue;
