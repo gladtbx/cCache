@@ -7,6 +7,9 @@
 #include <string>
 #include <unordered_map>
 #include <iostream>
+#include <chrono>
+//#include <fcntl.h>
+
 
 #define PORT 9407
 #define BUFSIZE (4096)
@@ -21,6 +24,9 @@ int main(int argc, char const *argv[])
     std::unordered_map<std::string,std::string> cache;
     unsigned long cachehit = 0;
     unsigned long cachemiss = 0;
+    long int setuptime = 0;
+    long int checktime = 0;
+    long int inserttime = 0;
 
     // Creating socket file descriptor
     if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0)
@@ -29,6 +35,7 @@ int main(int argc, char const *argv[])
         exit(EXIT_FAILURE);
     }
 
+    //fcntl(server_fd, F_SETFL, O_NONBLOCK);
     // Forcefully attaching socket to the port 9407
     if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
                                                   &opt, sizeof(opt)))
@@ -38,7 +45,7 @@ int main(int argc, char const *argv[])
     }
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = inet_addr("127.0.0.1");
-    address.sin_port = PORT;
+    address.sin_port = htons(PORT);
 
     // Forcefully attaching socket to the port 9407
     if (bind(server_fd, (struct sockaddr *)&address,
@@ -64,14 +71,19 @@ int main(int argc, char const *argv[])
 	        perror("accept");
 	        exit(EXIT_FAILURE);
 	    }
+	    setuptime = 0;
+	    checktime = 0;
+	    inserttime = 0;
 	    //std::cout  << address.sin_addr << ":" << address.sin_port <<std::endl;
 		while (1) {
+			std::chrono::high_resolution_clock::time_point r = std::chrono::high_resolution_clock::now();
 			valread = read( new_socket , buffer, BUFSIZE);
 			if(valread<0){
 				std::cout<<"Read Error"<< std::endl;
 				close(new_socket);
 				break;
 			}
+			std::chrono::high_resolution_clock::time_point s = std::chrono::high_resolution_clock::now();
 			buffer[valread] = NULL;
 			//printf("MSG Received: %s\n",buffer);
 			std::string msg(buffer);
@@ -89,21 +101,38 @@ int main(int argc, char const *argv[])
 			}
 			std::string header = msg.substr(0,header_pos);
 			std::string body = msg.substr(header_pos+1);
+	      	std::chrono::high_resolution_clock::time_point e = std::chrono::high_resolution_clock::now();
+	      	setuptime += (std::chrono::duration_cast<std::chrono::nanoseconds> (e-s)).count();
 			if(header == "check"){
+				auto duration = s.time_since_epoch();
+				//printf("Current Time for check: %ld, %ld\n",std::chrono::duration_cast<std::chrono::nanoseconds>(r.time_since_epoch()).count(),std::chrono::duration_cast<std::chrono::nanoseconds> (duration).count());
 				//printf("Check if cache hit\n");
+				s = std::chrono::high_resolution_clock::now();
 				std::unordered_map<std::string, std::string>::iterator get = cache.find(body);
+				e = std::chrono::high_resolution_clock::now();
+				checktime += (std::chrono::duration_cast<std::chrono::nanoseconds> (e-s)).count();
+				s = std::chrono::high_resolution_clock::now();
+				char rep;
 				if(get != cache.end()){
 					//Cache Hit!
 					cachehit++;
 					std::string reply = "G " + get->second;
+					rep = 'G';
 				    send(new_socket , reply.c_str() , reply.size() , 0 );
 				}else{
 					cachemiss++;
+					rep = 'N';
 					send(new_socket, "N ", 2, 0);
 				}
+				e = std::chrono::high_resolution_clock::now();
+				duration = e.time_since_epoch();
+				//printf("Current Time for reply: %ld,%d,%c\n",std::chrono::duration_cast<std::chrono::nanoseconds> (duration).count(),valread,rep);
+				setuptime += (std::chrono::duration_cast<std::chrono::nanoseconds> (e-s)).count();
 				continue;
 			}
 			if(header == "insert"){
+				send(new_socket, "Ack", 3, 0);
+				s = std::chrono::high_resolution_clock::now();
 				std::size_t ans_pos = body.find_first_of(' ');
 				if(ans_pos == std::string::npos){
 					printf("Error, msg does not contain result for insertion\n");
@@ -112,10 +141,16 @@ int main(int argc, char const *argv[])
 				}
 				std::string result = body.substr(0,ans_pos);
 				body = body.substr(ans_pos+1);
+				e = std::chrono::high_resolution_clock::now();
+				setuptime += (std::chrono::duration_cast<std::chrono::nanoseconds> (e-s)).count();
+				s = std::chrono::high_resolution_clock::now();
 				cache[body] = result;
+				e = std::chrono::high_resolution_clock::now();
+				inserttime += (std::chrono::duration_cast<std::chrono::nanoseconds> (e-s)).count();
 				continue;
 			}
 		}
+		printf("Setup time: %ld\nCheck time: %ld\nInsert time: %ld\n",setuptime,checktime,inserttime);
 	}
     return 0;
 }
