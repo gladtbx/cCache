@@ -12,7 +12,7 @@
 
 
 #define PORT 9407
-#define BUFSIZE (4096)
+#define BUFSIZE (32768)
 
 int main(int argc, char const *argv[])
 {
@@ -76,8 +76,8 @@ int main(int argc, char const *argv[])
 	    inserttime = 0;
 	    //std::cout  << address.sin_addr << ":" << address.sin_port <<std::endl;
 		while (1) {
-			std::chrono::high_resolution_clock::time_point r = std::chrono::high_resolution_clock::now();
 			valread = read( new_socket , buffer, BUFSIZE);
+//			printf("Read %d of bytes\n",valread);
 			if(valread<0){
 				std::cout<<"Read Error"<< std::endl;
 				close(new_socket);
@@ -85,7 +85,7 @@ int main(int argc, char const *argv[])
 			}
 			std::chrono::high_resolution_clock::time_point s = std::chrono::high_resolution_clock::now();
 			buffer[valread] = NULL;
-			//printf("MSG Received: %s\n",buffer);
+//			printf("MSG Received: %s\n",buffer);
 			std::string msg(buffer);
 			if(msg == "CLOSE"){
 				printf("Good talking to you, closing socket now\n");
@@ -101,6 +101,7 @@ int main(int argc, char const *argv[])
 			}
 			std::string header = msg.substr(0,header_pos);
 			std::string body = msg.substr(header_pos+1);
+			//printf("%s\n",body.c_str());
 	      	std::chrono::high_resolution_clock::time_point e = std::chrono::high_resolution_clock::now();
 	      	setuptime += (std::chrono::duration_cast<std::chrono::nanoseconds> (e-s)).count();
 			if(header == "check"){
@@ -112,16 +113,12 @@ int main(int argc, char const *argv[])
 				e = std::chrono::high_resolution_clock::now();
 				checktime += (std::chrono::duration_cast<std::chrono::nanoseconds> (e-s)).count();
 				s = std::chrono::high_resolution_clock::now();
-				char rep;
 				if(get != cache.end()){
 					//Cache Hit!
 					cachehit++;
-					std::string reply = "G " + get->second;
-					rep = 'G';
-				    send(new_socket , reply.c_str() , reply.size() , 0 );
+				    send(new_socket , get->second.c_str() , get->second.size() , 0 );
 				}else{
 					cachemiss++;
-					rep = 'N';
 					send(new_socket, "N ", 2, 0);
 				}
 				e = std::chrono::high_resolution_clock::now();
@@ -136,11 +133,16 @@ int main(int argc, char const *argv[])
 				std::size_t ans_pos = body.find_first_of(' ');
 				if(ans_pos == std::string::npos){
 					printf("Error, msg does not contain result for insertion\n");
-					close(new_socket);
+					//close(new_socket);
 					break;
 				}
-				std::string result = body.substr(0,ans_pos);
-				body = body.substr(ans_pos+1);
+
+				std::string qlen = body.substr(0,ans_pos);
+				int qlength = std::stoi(qlen);
+				std::string result(buffer+8+ans_pos,valread-qlength-ans_pos-8);
+				body = std::string(buffer+(valread-qlength),qlength);
+
+//				std::cout<< body << " : " << result<< std::endl;
 				e = std::chrono::high_resolution_clock::now();
 				setuptime += (std::chrono::duration_cast<std::chrono::nanoseconds> (e-s)).count();
 				s = std::chrono::high_resolution_clock::now();
